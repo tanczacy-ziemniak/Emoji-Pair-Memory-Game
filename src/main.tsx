@@ -52,6 +52,7 @@ Devvit.addCustomPostType({
     const [playerName, setPlayerName] = useState<string>('');
     const [isProcessingPair, setIsProcessingPair] = useState(false); // New state to track if we're processing a pair
     const [currentTimeout, setCurrentTimeout] = useState<number | null>(null);
+    const [showLeaderboardAfterSave, setShowLeaderboardAfterSave] = useState<boolean>(false);
     
     // Debug state changes - using a setter function instead of useEffect
     const setGameStateWithLogging = (newState: 'notStarted' | 'playing' | 'completed') => {
@@ -204,6 +205,14 @@ Devvit.addCustomPostType({
         
         setLeaderboard(newLeaderboard);
         setPlayerName('');
+        setShowLeaderboardAfterSave(true);
+        
+        // Show toast confirmation
+        try {
+          context.ui.showToast("Score saved to leaderboard!");
+        } catch (e) {
+          console.log("Unable to show toast");
+        }
       }
     };
     
@@ -215,6 +224,18 @@ Devvit.addCustomPostType({
       const milliseconds = Math.floor((ms % 1000) / 10);
       
       return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
+    };
+
+    // Close non-matching cards
+    const closeNonMatchingCards = () => {
+      setFlippedIndices([]);
+      setIsProcessingPair(false);
+      updateElapsedTime();
+    };
+
+    // Reset game to start screen
+    const resetToStartScreen = () => {
+      setGameStateWithLogging('notStarted');
     };
 
     // Update elapsed time before rendering
@@ -268,7 +289,6 @@ Devvit.addCustomPostType({
           <text size="large" weight="bold">Time: {formatTime(elapsedTime)}</text>
           <button appearance="secondary" onPress={startGame}>Restart</button>
           <button appearance="secondary" onPress={updateElapsedTime}>Update Timer</button>
-          {isProcessingPair && <text size="small" color="gray">Showing cards...</text>}
         </hstack>
         
         <vstack gap="small">
@@ -302,16 +322,55 @@ Devvit.addCustomPostType({
           ))}
         </vstack>
         
-        {gameState === 'completed' && (
+        {gameState === 'completed' && !showLeaderboardAfterSave && (
           <vstack gap="medium" padding="medium" backgroundColor="#f5f5f5" cornerRadius="medium">
+            <text size="xlarge" weight="bold">Game Completed!</text>
             <text size="large">Your time: {formatTime(endTime! - startTime!)}</text>
             
             <vstack gap="small">
-              <text>Save score as: {playerName || "Anonymous"}</text>
+              <hstack gap="small" alignment="center">
+                <text>Save score as:</text>
+                <textfield 
+                  value={playerName} 
+                  onValueChange={setPlayerName}
+                  placeholder="Enter your name" 
+                  width="60%"
+                />
+              </hstack>
               <button appearance="primary" onPress={saveScore}>Save Score</button>
             </vstack>
             
-            <button appearance="secondary" onPress={startGame}>Play Again</button>
+            <button appearance="secondary" onPress={resetToStartScreen}>Return to Start</button>
+          </vstack>
+        )}
+        
+        {gameState === 'completed' && showLeaderboardAfterSave && (
+          <vstack gap="medium" padding="medium" backgroundColor="#f5f5f5" cornerRadius="medium" width="100%">
+            <text size="xlarge" weight="bold">Leaderboard</text>
+            
+            <vstack gap="small" width="100%">
+              <hstack>
+                <text width="10%" weight="bold">Rank</text>
+                <text width="50%" weight="bold">Name</text>
+                <text width="40%" weight="bold">Time</text>
+              </hstack>
+              
+              {leaderboard.map((entry, i) => (
+                <hstack key={i.toString()} 
+                  backgroundColor={i === leaderboard.findIndex(e => e.time === entry.time && e.name === entry.name) ? "#e0f7ff" : undefined}
+                  padding="xsmall"
+                  cornerRadius="small">
+                  <text width="10%">{i + 1}</text>
+                  <text width="50%">{entry.name}</text>
+                  <text width="40%">{formatTime(entry.time)}</text>
+                </hstack>
+              ))}
+            </vstack>
+            
+            <hstack gap="small">
+              <button appearance="primary" onPress={startGame}>Play Again</button>
+              <button appearance="secondary" onPress={resetToStartScreen}>Return to Start</button>
+            </hstack>
           </vstack>
         )}
       </vstack>
