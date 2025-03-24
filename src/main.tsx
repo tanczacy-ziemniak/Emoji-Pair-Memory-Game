@@ -5,6 +5,8 @@ Devvit.configure({
   redditAPI: true,
 });
 
+// Remove the custom hook that uses useEffect
+
 // Add a menu item to the subreddit menu for instantiating the new experience post
 Devvit.addMenuItem({
   label: 'Add my post',
@@ -48,7 +50,14 @@ Devvit.addCustomPostType({
     const [elapsedTime, setElapsedTime] = useState<number>(0);
     const [leaderboard, setLeaderboard] = useState<{name: string, time: number}[]>([]);
     const [playerName, setPlayerName] = useState<string>('');
-    const [timerId, setTimerId] = useState<number | null>(null);
+    const [isProcessingPair, setIsProcessingPair] = useState(false); // New state to track if we're processing a pair
+    const [currentTimeout, setCurrentTimeout] = useState<number | null>(null);
+    
+    // Debug state changes - using a setter function instead of useEffect
+    const setGameStateWithLogging = (newState: 'notStarted' | 'playing' | 'completed') => {
+      console.log(`Game state changed to: ${newState}`);
+      setGameState(newState);
+    };
     
     // Shuffle the cards
     const shuffleCards = () => {
@@ -56,57 +65,77 @@ Devvit.addCustomPostType({
       setCards(shuffled);
     };
     
-    // Start the timer
-    const startTimer = () => {
-      // Clear any existing timer
-      if (timerId !== null) {
-        clearInterval(timerId);
-      }
-      
-      // Start a new timer that updates elapsed time every 100ms
-      const id = setInterval(() => {
-        if (startTime) {
-          setElapsedTime(Date.now() - startTime);
-        }
-      }, 100);
-      
-      setTimerId(id as unknown as number);
-    };
-    
-    // Stop the timer
-    const stopTimer = () => {
-      if (timerId !== null) {
-        clearInterval(timerId);
-        setTimerId(null);
+    // Calculate current elapsed time without using timers
+    const updateElapsedTime = () => {
+      if (startTime && gameState === 'playing') {
+        setElapsedTime(Date.now() - startTime);
       }
     };
     
     // Start a new game
     const startGame = () => {
-      // Clear any existing timer
-      stopTimer();
+      console.log("startGame function called");
       
-      shuffleCards();
+      // Cancel any ongoing timers
+      cancelCurrentTimeout();
+      
+      // Make sure we initialize the cards array with shuffled emojis
+      const shuffled = [...allEmojis].sort(() => Math.random() - 0.5);
+      
+      setGameStateWithLogging('playing');
+      setCards(shuffled);
       setFlippedIndices([]);
       setMatchedPairs([]);
-      setGameState('playing');
+      
       const now = Date.now();
       setStartTime(now);
       setEndTime(null);
       setElapsedTime(0);
       
-      // Start the timer for the new game
-      startTimer();
+      console.log("Game should be starting with", shuffled.length, "cards");
+    };
+
+    // Cancel any ongoing timeout
+    const cancelCurrentTimeout = () => {
+      if (currentTimeout !== null) {
+        try {
+          clearTimeout(currentTimeout);
+          setCurrentTimeout(null);
+        } catch (e) {
+          console.log("Error clearing timeout:", e);
+        }
+      }
     };
     
     // Handle card clicks
     const handleCardClick = (index: number) => {
+      // Update the elapsed time when a card is clicked
+      updateElapsedTime();
+      
+      // If the card is already flipped or matched, don't do anything
       if (
         gameState !== 'playing' || 
         flippedIndices.includes(index) || 
-        matchedPairs.includes(index) ||
-        flippedIndices.length >= 2
+        matchedPairs.includes(index)
       ) {
+        return;
+      }
+      
+      // If we're currently showing a non-matching pair and user clicks a new card
+      if (isProcessingPair) {
+        // Cancel the current timeout
+        cancelCurrentTimeout();
+        
+        // Reset the processing state
+        setIsProcessingPair(false);
+        
+        // Clear the current flipped cards and show the new one
+        setFlippedIndices([index]);
+        return;
+      }
+      
+      // If we already have 2 cards flipped, don't allow more
+      if (flippedIndices.length >= 2) {
         return;
       }
       
@@ -127,14 +156,40 @@ Devvit.addCustomPostType({
           if (newMatchedPairs.length === cards.length) {
             const now = Date.now();
             setEndTime(now);
-            setGameState('completed');
-            stopTimer(); // Stop the timer when game completes
+            setGameStateWithLogging('completed');
           }
         } else {
-          // No match, flip back after delay
-          setTimeout(() => {
-            setFlippedIndices([]);
-          }, 1000);
+          // No match, set the processing flag so the user can see both cards
+          setIsProcessingPair(true);
+          
+          // Manual timeout approach since setTimeout may not be reliable
+          const currentTime = Date.now();
+          
+          // Check every 100ms using normal game loop 
+          const checkTimeElapsed = () => {
+            const now = Date.now();
+            if (now - currentTime >= 1000) {
+              // If enough time has passed, flip the cards back
+              setFlippedIndices([]);
+              setIsProcessingPair(false);
+              setCurrentTimeout(null);
+              updateElapsedTime();
+            } else {
+              // Keep showing the cards
+              const timeoutId = setTimeout(checkTimeElapsed, 100);
+              setCurrentTimeout(timeoutId as unknown as number);
+            }
+          };
+          
+          // Start the delayed flip
+          try {
+            const timeoutId = setTimeout(checkTimeElapsed, 1000);
+            setCurrentTimeout(timeoutId as unknown as number);
+          } catch (e) {
+            console.log("setTimeout not available, using fallback");
+            // Fallback for environments where setTimeout isn't available
+            setFlippedIndices(newFlippedIndices);
+          }
         }
       }
     };
@@ -162,12 +217,20 @@ Devvit.addCustomPostType({
       return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
     };
 
+    // Update elapsed time before rendering
+    if (gameState === 'playing' && startTime) {
+      updateElapsedTime();
+    }
+
     if (gameState === 'notStarted') {
       return (
         <vstack height="100%" width="100%" gap="medium" alignment="center middle">
           <text size="xxlarge" weight="bold">Memory Matching Game</text>
           <text size="large">Find all matching emoji pairs as quickly as you can!</text>
-          <button appearance="primary" onPress={startGame}>Start Game</button>
+          <button appearance="primary" onPress={() => {
+            console.log("Start Game button pressed");
+            startGame();
+          }}>Start Game</button>
           
           {leaderboard.length > 0 && (
             <vstack gap="small" width="80%">
@@ -187,12 +250,25 @@ Devvit.addCustomPostType({
         </vstack>
       );
     }
+    
+    // Add a debug check to ensure we have cards to render
+    if (cards.length === 0) {
+      console.log("No cards available to render game");
+      return (
+        <vstack height="100%" width="100%" gap="medium" alignment="center middle">
+          <text size="large">Loading game...</text>
+          <button appearance="primary" onPress={shuffleCards}>Initialize Cards</button>
+        </vstack>
+      );
+    }
 
     return (
       <vstack height="100%" width="100%" gap="medium" padding="medium">
         <hstack gap="medium" alignment="center middle">
           <text size="large" weight="bold">Time: {formatTime(elapsedTime)}</text>
           <button appearance="secondary" onPress={startGame}>Restart</button>
+          <button appearance="secondary" onPress={updateElapsedTime}>Update Timer</button>
+          {isProcessingPair && <text size="small" color="gray">Showing cards...</text>}
         </hstack>
         
         <vstack gap="small">
@@ -201,12 +277,17 @@ Devvit.addCustomPostType({
               {[0, 1, 2, 3, 4, 5].map(col => {
                 const index = row * 6 + col;
                 const isFlipped = flippedIndices.includes(index) || matchedPairs.includes(index);
+                const isProcessing = flippedIndices.includes(index) && isProcessingPair;
+                
                 return (
                   <hstack 
                     key={col.toString()} 
                     height="60px" 
                     width="60px" 
-                    backgroundColor={matchedPairs.includes(index) ? "#e0ffe0" : "#f0f0f0"} 
+                    backgroundColor={
+                      matchedPairs.includes(index) ? "#e0ffe0" : 
+                      isProcessing ? "#fff8e0" : "#f0f0f0"
+                    } 
                     cornerRadius="medium"
                     border="thin"
                     borderColor={flippedIndices.includes(index) ? "blue" : "gray"}
@@ -223,7 +304,6 @@ Devvit.addCustomPostType({
         
         {gameState === 'completed' && (
           <vstack gap="medium" padding="medium" backgroundColor="#f5f5f5" cornerRadius="medium">
-            <text size="xlarge" weight="bold">Game Completed!</text>
             <text size="large">Your time: {formatTime(endTime! - startTime!)}</text>
             
             <vstack gap="small">
