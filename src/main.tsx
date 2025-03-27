@@ -257,7 +257,7 @@ Devvit.addCustomPostType({
         <vstack height="100%" width="100%" gap="medium" padding="medium">
           <hstack gap="medium" alignment="center middle">
             <text size="large" weight="bold">🕓 {formatTime(elapsedTime)}</text>
-            <button appearance="secondary" onPress={startGame}>⟳</button>
+            <button appearance="secondary" onPress={startGame}>🔁</button>
             <button appearance="secondary" onPress={resetToStartScreen}>🏠︎</button>
           </hstack>
           
@@ -346,7 +346,7 @@ Devvit.addCustomPostType({
               </vstack>
               
               <hstack gap="small">
-                <button appearance="primary" onPress={startGame}>⟳</button>
+                <button appearance="secondary" onPress={startGame}>🔁</button>
                 <button appearance="secondary" onPress={resetToStartScreen}>🏠︎</button>
               </hstack>
             </vstack>
